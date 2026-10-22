@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>토끼 당근 피하기</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#2b3a55;font-family:sans-serif;color:#fff}
+#app{position:relative;width:100%;max-width:480px;height:100%;margin:0 auto;display:flex;flex-direction:column;background:#9fd8f5}
+#hud{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:#2b3a55;font-size:26px;font-weight:bold}
+#hud button{font-size:16px;padding:6px 10px;border:0;border-radius:8px;background:#ffd166;color:#333}
+#stage{position:relative;flex:1;min-height:0}
+canvas{display:block;width:100%;height:100%;touch-action:none}
+#ctrl{display:flex;gap:10px;padding:10px;background:#2b3a55}
+#ctrl button{flex:1;height:64px;font-size:34px;border:0;border-radius:14px;background:#ff9f43;color:#fff;touch-action:none;user-select:none}
+#ctrl button:active{background:#e67e22}
+.screen{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:16px;background:rgba(20,30,50,.88);text-align:center;padding:16px;z-index:5}
+.screen.show{display:flex}
+.screen h1{margin:0;font-size:34px}
+.big{font-size:22px;padding:14px 36px;border:0;border-radius:14px;background:#ff9f43;color:#fff;font-weight:bold}
+#poster{max-width:90%;max-height:60%;border-radius:12px;display:none}
+#start{background:#2b3a55}
+#end{background:#000;padding:0;z-index:8}
+#end video{width:100%;flex:1;min-height:0;object-fit:cover}
+#end .big{margin:12px}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="hud">
+    <span>점수 <span id="sc">0</span></span>
+    <span id="lv">♥♥♥♥♥</span>
+    <button id="mute" type="button">음악 끄기</button>
+  </div>
+  <div id="stage">
+    <canvas id="cv"></canvas>
+    <div id="start" class="screen show">
+      <h1>토끼 당근 피하기</h1>
+      <img id="poster" src="poster.png" alt="">
+      <button id="go" class="big" type="button">시작</button>
+    </div>
+    <div id="over" class="screen">
+      <h1>게임 오버</h1>
+      <div id="osc" style="font-size:22px"></div>
+      <button class="big retry" type="button">다시 하기</button>
+    </div>
+    <div id="clear" class="screen">
+      <h1>클리어!</h1>
+      <button class="big retry" type="button">다시 하기</button>
+    </div>
+    <div id="end" class="screen">
+      <video id="vid" src="ending.mp4" playsinline></video>
+      <button class="big retry" id="endretry" type="button" style="display:none">다시 하기</button>
+    </div>
+  </div>
+  <div id="ctrl">
+    <button id="bl" type="button">◀</button>
+    <button id="br" type="button">▶</button>
+  </div>
+</div>
+<audio id="bgm" src="music.mp3" loop preload="auto"></audio>
+<script>
+(function(){
+var cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+var W=360,H=520;
+var $=function(i){return document.getElementById(i)};
+var bgm=$('bgm'),vid=$('vid'),poster=$('poster');
+var state='ready',score=0,lives=5,inv=0,t0=0,last=0,spawn=0;
+var rabbit={x:W/2,w:44,h:50},carrots=[],keys={l:false,r:false},btn={l:false,r:false},drag=null;
+var musicOn=true,bgmOk=true,vidOk=true;
+
+function fit(){
+  var r=cv.getBoundingClientRect(),d=window.devicePixelRatio||1;
+  cv.width=Math.max(1,r.width*d);cv.height=Math.max(1,r.height*d);
+}
+window.addEventListener('resize',fit);fit();
+
+poster.addEventListener('error',function(){poster.style.display='none'});
+poster.addEventListener('load',function(){poster.style.display='block'});
+bgm.addEventListener('error',function(){bgmOk=false;$('mute').style.display='none'});
+vid.addEventListener('error',function(){vidOk=false});
+
+function playMusic(){
+  if(!bgmOk||!musicOn)return;
+  try{var p=bgm.play();if(p&&p.catch)p.catch(function(){})}catch(e){}
+}
+$('mute').addEventListener('click',function(){
+  musicOn=!musicOn;
+  $('mute').textContent=musicOn?'음악 끄기':'음악 켜기';
+  if(musicOn){if(state==='play')playMusic()}else{try{bgm.pause()}catch(e){}}
+});
+
+function show(id){['start','over','clear','end'].forEach(function(s){$(s).classList.toggle('show',s===id)})}
+function hearts(){var s='';for(var i=0;i<5;i++)s+=i<lives?'♥':'♡';$('lv').textContent=s}
+
+function reset(){
+  score=0;lives=5;inv=0;carrots=[];spawn=0;rabbit.x=W/2;
+  $('sc').textContent=0;hearts();
+  try{vid.pause();vid.currentTime=0}catch(e){}
+  $('endretry').style.display='none';
+  show(null);state='play';t0=last=performance.now();
+  playMusic();
+}
+$('go').addEventListener('click',reset);
+Array.prototype.forEach.call(document.querySelectorAll('.retry'),function(b){b.addEventListener('click',reset)});
+
+function win(){
+  state='clear';
+  try{bgm.pause()}catch(e){}
+  if(!vidOk){show('clear');return}
+  show('end');
+  var done=false;
+  function fin(){if(done)return;done=true;$('endretry').style.display='block'}
+  vid.onended=fin;
+  vid.addEventListener('error',fin,{once:true});
+  try{var p=vid.play();if(p&&p.catch)p.catch(function(){vidOk=false;show('clear')})}catch(e){show('clear')}
+}
+function lose(){
+  state='over';try{bgm.pause()}catch(e){}
+  $('osc').textContent='점수 '+Math.floor(score);show('over');
+}
+
+document.addEventListener('keydown',function(e){
+  if(e.key==='ArrowLeft'){keys.l=true;e.preventDefault()}
+  if(e.key==='ArrowRight'){keys.r=true;e.preventDefault()}
+});
+document.addEventListener('keyup',function(e){
+  if(e.key==='ArrowLeft')keys.l=false;
+  if(e.key==='ArrowRight')keys.r=false;
+});
+function hold(el,k){
+  var on=function(e){e.preventDefault();btn[k]=true};
+  var off=function(e){e.preventDefault();btn[k]=false};
+  el.addEventListener('pointerdown',on);
+  el.addEventListener('pointerup',off);el.addEventListener('pointercancel',off);el.addEventListener('pointerleave',off);
+  el.addEventListener('contextmenu',function(e){e.preventDefault()});
+}
+hold($('bl'),'l');hold($('br'),'r');
+function toX(e){var r=cv.getBoundingClientRect();return (e.clientX-r.left)/r.width*W}
+cv.addEventListener('pointerdown',function(e){drag=e.pointerId;try{cv.setPointerCapture(e.pointerId)}catch(x){}rabbit.x=toX(e)});
+cv.addEventListener('pointermove',function(e){if(drag===e.pointerId)rabbit.x=toX(e)});
+function up(e){if(drag===e.pointerId)drag=null}
+cv.addEventListener('pointerup',up);cv.addEventListener('pointercancel',up);
+window.addEventListener('blur',function(){keys.l=keys.r=btn.l=btn.r=false});
+
+function update(dt,now){
+  var dir=(keys.l||btn.l?-1:0)+(keys.r||btn.r?1:0);
+  rabbit.x+=dir*260*dt;
+  rabbit.x=Math.max(rabbit.w/2,Math.min(W-rabbit.w/2,rabbit.x));
+  score+=20*dt;
+  $('sc').textContent=Math.floor(score);
+  spawn-=dt;
+  if(spawn<=0){spawn=0.9+Math.random()*0.4;carrots.push({x:20+Math.random()*(W-40),y:-40,v:90+Math.random()*30,a:Math.random()*6})}
+  var ry=H-14-rabbit.h/2;
+  for(var i=carrots.length-1;i>=0;i--){
+    var c=carrots[i];c.y+=c.v*dt;
+    if(c.y>H+50){carrots.splice(i,1);continue}
+    // 작은 판정: 토끼 몸통 ±12 x ±16, 당근 ±6 x ±14
+    if(inv<=0&&Math.abs(c.x-rabbit.x)<18&&Math.abs(c.y-ry)<30){
+      lives--;inv=1.5;hearts();carrots.splice(i,1);
+      if(lives<=0){lose();return}
+    }
+  }
+  if(inv>0)inv-=dt;
+  if(score>=300){score=300;$('sc').textContent=300;win()}
+}
+
+function drawRabbit(){
+  var x=rabbit.x,y=H-14-rabbit.h/2;
+  if(inv>0&&Math.floor(inv*10)%2===0)return;
+  ctx.fillStyle='#fff';
+  ctx.beginPath();ctx.ellipse(x-9,y-26,6,16,-0.1,0,7);ctx.fill();
+  ctx.beginPath();ctx.ellipse(x+9,y-26,6,16,0.1,0,7);ctx.fill();
+  ctx.fillStyle='#ffb3c1';
+  ctx.beginPath();ctx.ellipse(x-9,y-26,3,11,-0.1,0,7);ctx.fill();
+  ctx.beginPath();ctx.ellipse(x+9,y-26,3,11,0.1,0,7);ctx.fill();
+  ctx.fillStyle='#fff';
+  ctx.beginPath();ctx.ellipse(x,y+6,20,18,0,0,7);ctx.fill();
+  ctx.beginPath();ctx.arc(x,y-6,16,0,7);ctx.fill();
+  ctx.fillStyle='#222';
+  ctx.beginPath();ctx.arc(x-6,y-8,2.5,0,7);ctx.fill();
+  ctx.beginPath();ctx.arc(x+6,y-8,2.5,0,7);ctx.fill();
+  ctx.fillStyle='#ff7096';
+  ctx.beginPath();ctx.arc(x,y-2,2.5,0,7);ctx.fill();
+}
+function drawCarrot(c){
+  ctx.save();ctx.translate(c.x,c.y);
+  ctx.fillStyle='#3cb043';
+  ctx.beginPath();ctx.ellipse(-4,-22,3,8,-0.4,0,7);ctx.fill();
+  ctx.beginPath();ctx.ellipse(4,-22,3,8,0.4,0,7);ctx.fill();
+  ctx.fillStyle='#ff8c1a';
+  ctx.beginPath();ctx.moveTo(-10,-16);ctx.lineTo(10,-16);ctx.lineTo(0,24);ctx.closePath();ctx.fill();
+  ctx.strokeStyle='#d9650a';ctx.lineWidth=2;
+  ctx.beginPath();ctx.moveTo(-5,-8);ctx.lineTo(0,-8);ctx.moveTo(2,2);ctx.lineTo(6,2);ctx.stroke();
+  ctx.restore();
+}
+function draw(){
+  var s=Math.min(cv.width/W,cv.height/H);
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.clearRect(0,0,cv.width,cv.height);
+  // 비율 유지: 가운데 정렬 후 배경 채우기
+  var ox=(cv.width-W*s)/2,oy=(cv.height-H*s)/2;
+  ctx.setTransform(s,0,0,s,ox,oy);
+  var g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,'#9fd8f5');g.addColorStop(1,'#d9f2c4');
+  ctx.fillStyle=g;ctx.fillRect(-ox/s,-oy/s,cv.width/s,cv.height/s);
+  ctx.fillStyle='#7ccf6a';ctx.fillRect(-ox/s,H-8,cv.width/s,8+oy/s);
+  carrots.forEach(drawCarrot);
+  drawRabbit();
+}
+function loop(now){
+  var dt=Math.min(0.05,(now-last)/1000);last=now;
+  if(state==='play')update(dt,now);
+  draw();
+  requestAnimationFrame(loop);
+}
+last=performance.now();requestAnimationFrame(loop);
+// 포스터가 로드되기 전 이미 실패했을 수 있는 경우 대비
+if(poster.complete&&poster.naturalWidth>0)poster.style.display='block';
+hearts();
+})();
+</script>
+</body>
+</html>
