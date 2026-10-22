@@ -1,0 +1,8 @@
+# DB 파일, 설치 폴더, 빌드 결과, 비밀값 파일은 커밋하지 않아요.
+data/
+node_modules/
+dist/
+build/
+.gradle/
+.env
+.env.*

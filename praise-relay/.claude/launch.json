@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "praise-relay",
+      "runtimeExecutable": "C:/Users/sotlz/AppData/Local/Programs/Python/Python312/python.exe",
+      "runtimeArgs": ["-u", "app.py", "--port", "8080"],
+      "port": 8080
+    }
+  ]
+}
